@@ -4,7 +4,11 @@ using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
 using System.Reflection;
+using Jotunn.Entities;
+using Jotunn.Managers;
+using Jotunn.Utils;
 using UnityEngine;
+
 // ReSharper disable Unity.PerformanceCriticalCodeInvocation
 
 namespace ChestContents
@@ -17,14 +21,17 @@ namespace ChestContents
         const string pluginVersion = "1.0.0";
         private readonly Harmony HarmonyInstance = new Harmony(pluginGUID);
         public static ManualLogSource logger = BepInEx.Logging.Logger.CreateLogSource(pluginName);
-        
+
         private static List<Container> _chests = new List<Container>();
         private static Dictionary<int, ChestInfo> _chestInfo = new Dictionary<int, ChestInfo>();
+        private CustomStatusEffect ChestIndexEffect;
 
         public void Awake()
         {
             Assembly assembly = Assembly.GetExecutingAssembly();
             HarmonyInstance.PatchAll(assembly);
+
+            AddStatusEffect();
         }
 
         private void Update()
@@ -39,10 +46,19 @@ namespace ChestContents
                     ChestInfo ci = new ChestInfo(chest);
                     if (!_chestInfo.ContainsKey(ci.InstanceID))
                     {
-                        Main.logger.LogInfo("Added a chest (" + ci.InstanceID + ") with " + ci.Contents.Count + " items.");
+                        Main.logger.LogInfo("Added a chest (" + ci.InstanceID + ") with " + ci.Contents.Count +
+                                            " items.");
                         _chestInfo.Add(ci.InstanceID, ci);
                     }
                 });
+                var chestIndex = ChestIndexEffect.StatusEffect;
+                if (chestIndex is SE_ChestIndex)
+                {
+                    chestIndex.m_tooltip = _chestInfo.Count.ToString();
+                }
+
+                // ChestIndexEffect.StatusEffect.chestCount = _chestInfo.Count;
+                Player.m_localPlayer.GetSEMan().AddStatusEffect(ChestIndexEffect.StatusEffect, true);
             }
         }
 
@@ -50,13 +66,12 @@ namespace ChestContents
 
         public void PopulateContainers()
         {
-
             // Get all chests in the world
             int size = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, _colliders);
             for (int i = 0; i < size; i++)
             {
                 Collider collider = _colliders[i];
-                
+
                 // get collider parent, then check if it has a container component
                 if (collider.transform.parent == null)
                 {
@@ -68,7 +83,7 @@ namespace ChestContents
                 {
                     int instanceID = container.GetInstanceID();
                     Container result = _chests.Find(x => x.GetInstanceID() == instanceID);
-                    if(CheckContainerAccess(container, Player.m_localPlayer))
+                    if (CheckContainerAccess(container, Player.m_localPlayer))
                     {
                         if (result == null)
                         {
@@ -84,6 +99,18 @@ namespace ChestContents
         {
             return ContainerPatch.RunCheckAccess(container, player.GetPlayerID());
         }
+
+        private void AddStatusEffect()
+        {
+            SE_ChestIndex effect = ScriptableObject.CreateInstance<SE_ChestIndex>();
+            effect.GetIconText();
+            effect.name = "ChestIndexEffect";
+            effect.m_name = "Chest Contents";
+            effect.m_icon = AssetUtils.LoadSpriteFromFile("ChestContents/Assets/chest.png");
+
+            ChestIndexEffect = new CustomStatusEffect(effect, fixReference: false);
+            ItemManager.Instance.AddStatusEffect(ChestIndexEffect);
+        }
     }
 
     [HarmonyPatch]
@@ -91,9 +118,32 @@ namespace ChestContents
     {
         [HarmonyReversePatch]
         [HarmonyPatch(typeof(Container), "CheckAccess")]
-        public static bool RunCheckAccess(Container container, long playerID) => throw new NotImplementedException("This is a reverse patch, please use the original method instead.");
+        public static bool RunCheckAccess(Container container, long playerID) =>
+            throw new NotImplementedException("This is a reverse patch, please use the original method instead.");
     }
-    
+
+    // ReSharper disable once InconsistentNaming
+    public class SE_ChestIndex : StatusEffect
+    {
+        public override string GetIconText()
+        {
+            if (this.m_tooltip.Length <= 0)
+            {
+                return "";
+            }
+
+            var tt = Convert.ToInt32(this.m_tooltip);
+            if (tt > 0 && tt < 2)
+            {
+                return "" + tt + " chest";
+            }
+
+            // chest count
+            return "" + tt + " chests";
+        }
+    }
+
+
     // Struct holding the chest position, an identifier and the contents
     public struct ChestInfo
     {
@@ -116,8 +166,6 @@ namespace ChestContents
             InstanceID = container.GetInstanceID();
             Contents = container.GetInventory().GetAllItemsInGridOrder();
             LastUpdated = DateTime.Now;
-
         }
     }
-    
 }

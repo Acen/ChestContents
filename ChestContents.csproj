@@ -101,6 +101,9 @@
       <None Include="App.config" />
       <None Include="packages.config" />
     </ItemGroup>
+    <ItemGroup>
+      <Content Include="\Assets\chest.png" />
+    </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
          Other similar extension points exist, see Microsoft.Common.targets.
@@ -109,6 +112,7 @@
     -->
     <Target Name="AfterBuild">
         <Exec Command="xcopy /Y /I /E /Q &quot;$(TargetDir)$(TargetName).dll&quot; &quot;$(MOD_DEPLOYPATH)&quot;" />
+        <Exec Command="xcopy &quot;$(ProjectDir)Assets\*.*&quot; &quot;$(MOD_DEPLOYPATH)\$(TargetName)\Assets&quot; /Y /I /E /Q" />
     </Target>
     <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
       <PropertyGroup>
