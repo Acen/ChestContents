@@ -148,7 +148,7 @@ namespace ChestContents
     public struct ChestInfo
     {
         public Vector3 Position;
-        public int InstanceID;
+        public readonly int InstanceID;
         public List<ItemDrop.ItemData> Contents;
         public DateTime LastUpdated;
 
