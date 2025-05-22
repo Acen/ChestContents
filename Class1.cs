@@ -15,128 +15,109 @@ using Object = UnityEngine.Object;
 
 namespace ChestContents
 {
-    [BepInPlugin(pluginGUID, pluginName, pluginVersion)]
+    [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
     public class Main : BaseUnityPlugin
     {
-        private const string pluginGUID = "sticky.chestcontents";
-        private const string pluginName = "ChestContents";
-        private const string pluginVersion = "1.0.0";
-        public static ManualLogSource logger = BepInEx.Logging.Logger.CreateLogSource(pluginName);
+        private const string PluginGUID = "sticky.chestcontents";
+        private const string PluginName = "ChestContents";
+        private const string PluginVersion = "1.0.0";
+        public static new ManualLogSource Logger = BepInEx.Logging.Logger.CreateLogSource(PluginName);
 
-        private static readonly List<Container> _chests = new List<Container>();
+        private static readonly List<Container> Chests = new List<Container>();
         private static IndicatedChestList _indicatedList;
-        private static readonly Dictionary<int, ChestInfo> _chestInfo = new Dictionary<int, ChestInfo>();
+        private static readonly Dictionary<int, ChestInfo> ChestInfoDict = new Dictionary<int, ChestInfo>();
+        private static readonly Collider[] Colliders = new Collider[10240];
+        private readonly Harmony _harmonyInstance = new Harmony(PluginGUID);
+        private CustomStatusEffect _chestIndexEffect;
+        private int _lastChestCount = -1;
 
-        private static readonly Collider[] _colliders = new Collider[10240];
-        private readonly Harmony HarmonyInstance = new Harmony(pluginGUID);
-        private CustomStatusEffect ChestIndexEffect;
-
-        private int _lastChestCount = -1; // Track last chest count
-
-        public void Awake()
+        private void Awake()
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            HarmonyInstance.PatchAll(assembly);
-
+            _harmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
             AddStatusEffect();
         }
 
         private void Update()
         {
-            // Check player is in game before running
-            if (Player.m_localPlayer != null)
+            if (Player.m_localPlayer == null) return;
+            if (_indicatedList == null) _indicatedList = new IndicatedChestList();
+
+            PopulateContainers();
+            ParseChests();
+            _indicatedList.RunEffects();
+
+            var chestIndex = _chestIndexEffect.StatusEffect;
+            int currentChestCount = ChestInfoDict.Count;
+            if (chestIndex is SE_ChestIndex) chestIndex.m_tooltip = currentChestCount.ToString();
+
+            if (_lastChestCount != currentChestCount)
             {
-                if (_indicatedList == null) _indicatedList = new IndicatedChestList();
-
-                PopulateContainers();
-                ParseChests();
-                _indicatedList.RunEffects();
-
-                // Meta
-                var chestIndex = ChestIndexEffect.StatusEffect;
-                int currentChestCount = _chestInfo.Count;
-                if (chestIndex is SE_ChestIndex) chestIndex.m_tooltip = currentChestCount.ToString();
-
-                // Only replace the StatusEffect if the chest count has changed
-                if (_lastChestCount != currentChestCount)
+                var seMan = Player.m_localPlayer.GetSEMan();
+                if (seMan.GetStatusEffect(_chestIndexEffect.StatusEffect.NameHash()))
                 {
-                    var SEMan = Player.m_localPlayer.GetSEMan();
-                    if(SEMan.GetStatusEffect(ChestIndexEffect.StatusEffect.NameHash()))
-                    {
-                        SEMan.RemoveStatusEffect(ChestIndexEffect.StatusEffect);
-                    };
-                    SEMan.AddStatusEffect(ChestIndexEffect.StatusEffect, true);
-                    _lastChestCount = currentChestCount;
+                    seMan.RemoveStatusEffect(_chestIndexEffect.StatusEffect);
                 }
-
-                // Object.Instantiate(ping, ic.Chest.Position, ic.Chest.Rotation);
+                seMan.AddStatusEffect(_chestIndexEffect.StatusEffect, true);
+                _lastChestCount = currentChestCount;
             }
         }
 
-        public void PopulateContainers()
+        private void PopulateContainers()
         {
-            // Get all chests in the world
-            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, _colliders);
-            List<Container> containers = new List<Container>();
+            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
+            var containers = new List<Container>();
             for (var i = 0; i < colliderCount; i++)
             {
-                var collider = _colliders[i];
-
-                // get collider parent, then check if it has a container component
+                var collider = Colliders[i];
                 if (collider.transform.parent == null) continue;
-
                 var container = collider.transform.gameObject.GetComponentInParent<Container>();
-                if (container)
-                {
-                    containers.Add(container);
-                }
-
+                if (container) containers.Add(container);
             }
-            // Loop through containers efficiently:
             foreach (var container in containers)
             {
                 if (container == null || container.GetInventory() == null) continue;
-
-                // Check if the container is already in the list
                 var instanceID = container.GetInstanceID();
-                if (_chests.Find(x => x.GetInstanceID() == instanceID) == null)
+                if (Chests.Find(x => x.GetInstanceID() == instanceID) == null)
                 {
-                    // Check if the player has access to the container
                     if (CheckContainerAccess(container, Player.m_localPlayer))
                     {
-                        _chests.Add(container);
+                        Chests.Add(container);
                     }
                 }
             }
         }
 
-        public void ParseChests()
+        private void ParseChests()
         {
-            foreach (var chest in _chests.Where(chest =>
-                         chest != null && chest.transform != null && chest.GetInventory() != null))
+            // Remove chests that no longer exist from Chests, ChestInfoDict, and _indicatedList
+            Chests.RemoveAll(chest => chest == null || chest.transform == null || chest.GetInventory() == null);
+            var validInstanceIds = new HashSet<int>(Chests.Select(c => c.GetInstanceID()));
+            // Remove from ChestInfoDict
+            var toRemove = ChestInfoDict.Keys.Where(id => !validInstanceIds.Contains(id)).ToList();
+            foreach (var id in toRemove)
+            {
+                ChestInfoDict.Remove(id);
+            }
+            // Remove from _indicatedList
+            _indicatedList?.PurgeInvalid(validInstanceIds);
+
+            foreach (var chest in Chests.Where(chest => chest != null && chest.transform != null && chest.GetInventory() != null))
             {
                 var ci = new ChestInfo(chest);
-                if (!_chestInfo.ContainsKey(ci.InstanceID))
+                if (!ChestInfoDict.ContainsKey(ci.InstanceID))
                 {
-                    logger.LogInfo("Added a chest (" + ci.InstanceID + ") with " + ci.Contents.Count +
-                                   " items.");
-                    _chestInfo.Add(ci.InstanceID, ci);
+                    // Logger.LogInfo($"Added a chest ({ci.InstanceID}) with {ci.Contents.Count} items.");
+                    ChestInfoDict.Add(ci.InstanceID, ci);
                 }
-                else if (_chestInfo[ci.InstanceID].LastUpdated <
-                         DateTime.Now.Subtract(TimeSpan.FromSeconds(5)))
+                else if (ChestInfoDict[ci.InstanceID].LastUpdated < DateTime.Now.Subtract(TimeSpan.FromSeconds(5)))
                 {
-                    // Update the chest info if it has changed
-                    _chestInfo[ci.InstanceID] = ci;
-                    logger.LogInfo("Updated a chest (" + ci.InstanceID + ") with " +
-                                   _chestInfo[ci.InstanceID].Contents.Count +
-                                   " items.");
-                    // debug effect
+                    ChestInfoDict[ci.InstanceID] = ci;
+                    // Logger.LogInfo($"Updated a chest ({ci.InstanceID}) with {ChestInfoDict[ci.InstanceID].Contents.Count} items.");
                     _indicatedList.Add(ci);
-                    Logger.LogInfo("Indicated list has " + _indicatedList._chestList.Count + " chests");
+                    // Logger.LogInfo($"Indicated list has {_indicatedList.ChestList.Count} chests");
                 }
             }
         }
-
 
         private static bool CheckContainerAccess(Container container, Player player)
         {
@@ -150,14 +131,13 @@ namespace ChestContents
             effect.name = "ChestIndexEffect";
             effect.m_name = "Chest Contents";
             effect.m_icon = AssetUtils.LoadSpriteFromFile("ChestContents/Assets/chest.png");
-
-            ChestIndexEffect = new CustomStatusEffect(effect, false);
-            ItemManager.Instance.AddStatusEffect(ChestIndexEffect);
+            _chestIndexEffect = new CustomStatusEffect(effect, false);
+            ItemManager.Instance.AddStatusEffect(_chestIndexEffect);
         }
     }
 
     [HarmonyPatch]
-    public class ContainerPatch
+    public static class ContainerPatch
     {
         [HarmonyReversePatch]
         [HarmonyPatch(typeof(Container), "CheckAccess")]
@@ -167,59 +147,66 @@ namespace ChestContents
         }
     }
 
-    /**
-     * This is going to be incredibly inefficient, but it will work for now.
-     */
     public class IndicatedChestList
     {
-        public readonly List<ChestInfo> _chestList;
-        private readonly HashSet<int> _chestSet; // Added for uniqueness
-        private readonly ActionableEffect _effect = new ActionableEffect("vfx_WishbonePing");
+        public List<ChestInfo> ChestList { get; }
+        private readonly HashSet<int> _chestSet;
+        private readonly ActionableEffect _effect;
 
         public IndicatedChestList()
         {
-            _chestList = new List<ChestInfo>();
+            ChestList = new List<ChestInfo>();
             _chestSet = new HashSet<int>();
+            _effect = new ActionableEffect("vfx_WishbonePing");
         }
 
         public IndicatedChestList(List<ChestInfo> chestList, ActionableEffect effect)
         {
-            _chestList = chestList;
+            ChestList = chestList;
             _chestSet = new HashSet<int>(chestList.Select(c => c.InstanceID));
             _effect = effect;
         }
 
         public IndicatedChestList(List<ChestInfo> chestList)
         {
-            _chestList = chestList;
+            ChestList = chestList;
             _chestSet = new HashSet<int>(chestList.Select(c => c.InstanceID));
+            _effect = new ActionableEffect("vfx_WishbonePing");
         }
 
         public void Add(ChestInfo chest, bool unique = true)
         {
             if (unique)
             {
-                if (_chestSet.Add(chest.InstanceID)) // Only add if not present
+                if (_chestSet.Add(chest.InstanceID))
                 {
-                    _chestList.Add(chest);
+                    ChestList.Add(chest);
                 }
             }
             else
             {
-                _chestList.Add(chest);
+                ChestList.Add(chest);
                 _chestSet.Add(chest.InstanceID);
             }
         }
 
-        public void clear()
+        public void Clear()
         {
-            _chestList.Clear();
+            ChestList.Clear();
             _chestSet.Clear();
+        }
+
+        public void PurgeInvalid(HashSet<int> validInstanceIds)
+        {
+            ChestList.RemoveAll(ci => !validInstanceIds.Contains(ci.InstanceID));
+            _chestSet.RemoveWhere(id => !validInstanceIds.Contains(id));
         }
 
         public void RunEffects()
         {
-            foreach (var chest in _chestList) _effect.RunEffect(chest.Position, chest.Rotation, chest.InstanceID);
+            if (Game.IsPaused()) return;
+            foreach (var chest in ChestList)
+                _effect.RunEffect(chest.Position, chest.Rotation, chest.InstanceID);
         }
     }
 
@@ -228,11 +215,11 @@ namespace ChestContents
         private readonly TimeSpan _minTimeBetweenRuns;
         private readonly GameObject _prefab;
         private readonly Dictionary<int, DateTime> _lastRunPerChest = new Dictionary<int, DateTime>();
-    
+
         public ActionableEffect(GameObject prefab, int repeatInSeconds = 1)
         {
             if (prefab.GetType() != typeof(GameObject))
-                throw new ArgumentException("Prefab must be a GameObject, it is " + prefab.GetType());
+                throw new ArgumentException($"Prefab must be a GameObject, it is {prefab.GetType()}");
             _prefab = Object.Instantiate(prefab);
             _minTimeBetweenRuns = TimeSpan.FromSeconds(repeatInSeconds);
         }
@@ -248,35 +235,26 @@ namespace ChestContents
             if (_lastRunPerChest.TryGetValue(chestInstanceID, out var lastRun) &&
                 lastRun + _minTimeBetweenRuns > DateTime.Now)
                 return;
-
-            Main.logger.LogInfo("Running effect on chest " + chestInstanceID);
+            // Main.Logger.LogInfo($"Running effect on chest {chestInstanceID}");
             Object.Instantiate(_prefab, position, rotation);
             _lastRunPerChest[chestInstanceID] = DateTime.Now;
         }
     }
 
-
-    // ReSharper disable once InconsistentNaming
     public class SE_ChestIndex : StatusEffect
     {
         public override string GetIconText()
         {
-            if (m_tooltip.Length <= 0) return "";
-
-            var tt = Convert.ToInt32(m_tooltip);
-            if (tt > 0 && tt < 2) return "" + tt + " chest";
-
-            // chest count
-            return "" + tt + " chests";
+            if (string.IsNullOrEmpty(m_tooltip)) return string.Empty;
+            if (!int.TryParse(m_tooltip, out var tt)) return string.Empty;
+            return tt == 1 ? $"{tt} chest" : $"{tt} chests";
         }
     }
 
-
-    // Struct holding the chest position, an identifier and the contents
     public struct ChestInfo
     {
         public Vector3 Position;
-        public readonly int InstanceID;
+        public int InstanceID { get; }
         public Quaternion Rotation;
         public List<ItemDrop.ItemData> Contents;
         public DateTime LastUpdated;
@@ -284,14 +262,10 @@ namespace ChestContents
         public ChestInfo(Container container)
         {
             if (!container.enabled)
-            {
                 throw new Exception("Container is not enabled");
-            }
-                
             Position = container.transform.position;
             Rotation = container.transform.rotation;
             InstanceID = container.GetInstanceID();
-            
             Contents = container.GetInventory().GetAllItemsInGridOrder();
             LastUpdated = DateTime.Now;
         }
