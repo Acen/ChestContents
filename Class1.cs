@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -8,6 +9,7 @@ using Jotunn.Entities;
 using Jotunn.Managers;
 using Jotunn.Utils;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 // ReSharper disable Unity.PerformanceCriticalCodeInvocation
 
@@ -23,7 +25,7 @@ namespace ChestContents
         public static ManualLogSource logger = BepInEx.Logging.Logger.CreateLogSource(pluginName);
 
         private static List<Container> _chests = new List<Container>();
-        private static Dictionary<int, ChestInfo> _chestInfo = new Dictionary<int, ChestInfo>();
+        private static Dictionary<int, IndicatableChest> _chestInfo = new Dictionary<int, IndicatableChest>();
         private CustomStatusEffect ChestIndexEffect;
 
         public void Awake()
@@ -41,23 +43,45 @@ namespace ChestContents
             {
                 PopulateContainers();
                 // Flesh out container info
-                _chests.ForEach(chest =>
+                foreach(var chest in _chests.Where(chest => chest.transform != null && chest.transform.position != null))
                 {
                     ChestInfo ci = new ChestInfo(chest);
+                    IndicatableChest ic = new IndicatableChest(ci);
                     if (!_chestInfo.ContainsKey(ci.InstanceID))
                     {
                         Main.logger.LogInfo("Added a chest (" + ci.InstanceID + ") with " + ci.Contents.Count +
                                             " items.");
-                        _chestInfo.Add(ci.InstanceID, ci);
+                        _chestInfo.Add(ci.InstanceID, ic);
                     }
-                });
+                    else if (_chestInfo[ci.InstanceID].Chest.LastUpdated <
+                             (DateTime.Now.Subtract(TimeSpan.FromSeconds(1))))
+                    {
+                        // Update the chest info if it has changed
+                        _chestInfo[ci.InstanceID] = ic;
+                        Main.logger.LogInfo("Updated a chest (" + ci.InstanceID + ") with " +
+                                            _chestInfo[ci.InstanceID].Chest.Contents.Count +
+                                            " items.");
+
+                        GameObject ping = ZNetScene.instance.GetPrefab("vfx_WishbonePing");
+                        ParticleSystem[] particleSystems = ping.GetComponentsInChildren<ParticleSystem>();
+                        foreach (var particleSystem in particleSystems)
+                        {
+                            ParticleSystem.MainModule main = particleSystem.main;
+                            main.startDelayMultiplier = 0f;
+                        }
+
+                        if (ping != null)
+                        {
+                            Object.Instantiate(ping, ic.Chest.Position, ic.Chest.Rotation);
+                        }
+                    }
+                };
                 var chestIndex = ChestIndexEffect.StatusEffect;
                 if (chestIndex is SE_ChestIndex)
                 {
                     chestIndex.m_tooltip = _chestInfo.Count.ToString();
                 }
 
-                // ChestIndexEffect.StatusEffect.chestCount = _chestInfo.Count;
                 Player.m_localPlayer.GetSEMan().AddStatusEffect(ChestIndexEffect.StatusEffect, true);
             }
         }
@@ -122,17 +146,43 @@ namespace ChestContents
             throw new NotImplementedException("This is a reverse patch, please use the original method instead.");
     }
 
+    public class IndicatableChest
+    {
+        public ChestInfo Chest;
+        public EffectList OnIndicated = new IndicatedChestEffectList();
+
+        public IndicatableChest(ChestInfo chest)
+        {
+            Chest = chest;
+        }
+    }
+
+    public class IndicatedChestEffectList : EffectList
+    {
+        public IndicatedChestEffectList()
+        {
+            m_effectPrefabs = new EffectData[1];
+            m_effectPrefabs[0] = new IndicatedChestEffectData();
+        }
+    }
+
+    public class IndicatedChestEffectData : EffectList.EffectData
+    {
+        // ReSharper disable once InconsistentNaming
+        public new GameObject m_prefab = ZNetScene.instance.GetPrefab("vfx_WishbonePing");
+    }
+
     // ReSharper disable once InconsistentNaming
     public class SE_ChestIndex : StatusEffect
     {
         public override string GetIconText()
         {
-            if (this.m_tooltip.Length <= 0)
+            if (m_tooltip.Length <= 0)
             {
                 return "";
             }
 
-            var tt = Convert.ToInt32(this.m_tooltip);
+            var tt = Convert.ToInt32(m_tooltip);
             if (tt > 0 && tt < 2)
             {
                 return "" + tt + " chest";
@@ -149,13 +199,15 @@ namespace ChestContents
     {
         public Vector3 Position;
         public readonly int InstanceID;
+        public Quaternion Rotation;
         public List<ItemDrop.ItemData> Contents;
         public DateTime LastUpdated;
 
-        public ChestInfo(Vector3 position, int instanceID, List<ItemDrop.ItemData> contents)
+        public ChestInfo(Vector3 position, Quaternion rotation, int instanceID, List<ItemDrop.ItemData> contents)
         {
             Position = position;
             InstanceID = instanceID;
+            Rotation = rotation;
             Contents = contents;
             LastUpdated = DateTime.Now;
         }
@@ -163,6 +215,7 @@ namespace ChestContents
         public ChestInfo(Container container)
         {
             Position = container.transform.position;
+            Rotation = container.transform.rotation;
             InstanceID = container.GetInstanceID();
             Contents = container.GetInventory().GetAllItemsInGridOrder();
             LastUpdated = DateTime.Now;
