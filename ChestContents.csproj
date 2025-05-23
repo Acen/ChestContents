@@ -113,7 +113,6 @@
         <Content Include="Assets\meta_detail.jpg" />
         <Content Include="Assets\effect_example.jpg" />
         <Content Include="Assets\chest.png"/>
-        <Content Include="Assets\chest 256x256.png"/>
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
@@ -135,6 +134,7 @@
         <Copy SourceFiles="$(OutDir)ChestContents.dll" DestinationFolder="$(ReleaseDir)" />
         <Copy SourceFiles="$(ProjectDir)README.md" DestinationFolder="$(ReleaseDir)" />
         <Copy SourceFiles="$(ProjectDir)manifest.json" DestinationFolder="$(ReleaseDir)" />
+        <Copy SourceFiles="$(ProjectDir)Assets\icon.png" DestinationFolder="$(ReleaseDir)" />
         <Copy SourceFiles="@(Content)" DestinationFolder="$(ReleaseDir)ChestContents\Assets">
             <Output TaskParameter="CopiedFiles" ItemName="CopiedAssetFiles" />
         </Copy>

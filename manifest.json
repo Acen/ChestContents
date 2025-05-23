@@ -1,12 +1,11 @@
 {
   "name": "ChestContents",
-  "version": "1.0.0",
+  "version_number": "1.0.0",
   "author": "sticky",
   "description": "A Valheim plugin to index and search chest contents, showing the chest with the most of a searched item.",
   "dependencies": [
     "bbepis-BepInExPack-5.4.2117",
     "ValheimModding-Jotunn-2.25.0"
   ],
-  "website": "https://github.com/Acen/ChestContents"
+  "website_url": "https://github.com/Acen/ChestContents"
 }
-
