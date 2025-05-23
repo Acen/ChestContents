@@ -1,8 +1,8 @@
 # ChestContents
 
-![Effect Example](Assets/effect_example.jpg)
+![Effect Example](https://raw.githubusercontent.com/Acen/ChestContents/master/Assets/effect_example.jpg)
 
-![Meta Pane Example](Assets/meta_detail.jpg)
+![Meta Pane Example](https://raw.githubusercontent.com/Acen/ChestContents/master/Assets/meta_detail.jpg)
 
 ## Introduction
 
