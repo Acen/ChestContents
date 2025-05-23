@@ -3,3 +3,6 @@
 /lib/
 /obj/
 /.idea/
+/bin/Release
+/ReleasePackage
+/ChestContents.zip

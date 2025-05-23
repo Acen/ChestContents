@@ -110,8 +110,10 @@
         <None Include="packages.config"/>
     </ItemGroup>
     <ItemGroup>
+        <Content Include="Assets\meta_detail.jpg" />
+        <Content Include="Assets\effect_example.jpg" />
         <Content Include="Assets\chest.png"/>
-        <Content Include="\Assets\chest.png"/>
+        <Content Include="Assets\chest 256x256.png"/>
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
     <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
@@ -122,6 +124,21 @@
     <Target Name="AfterBuild">
         <Exec Command="xcopy /Y /I /E /Q &quot;$(TargetDir)$(TargetName).dll&quot; &quot;$(MOD_DEPLOYPATH)&quot;"/>
         <Exec Command="xcopy &quot;$(ProjectDir)Assets\*.*&quot; &quot;$(MOD_DEPLOYPATH)\$(TargetName)\Assets&quot; /Y /I /E /Q"/>
+    </Target>
+    <Target Name="PackageRelease" AfterTargets="Build">
+        <PropertyGroup>
+            <ReleaseDir>$(ProjectDir)ReleasePackage\</ReleaseDir>
+            <ReleaseZip>$(ProjectDir)ChestContents.zip</ReleaseZip>
+        </PropertyGroup>
+        <RemoveDir Directories="$(ReleaseDir)" />
+        <MakeDir Directories="$(ReleaseDir)ChestContents\Assets" />
+        <Copy SourceFiles="$(OutDir)ChestContents.dll" DestinationFolder="$(ReleaseDir)" />
+        <Copy SourceFiles="$(ProjectDir)README.md" DestinationFolder="$(ReleaseDir)" />
+        <Copy SourceFiles="$(ProjectDir)manifest.json" DestinationFolder="$(ReleaseDir)" />
+        <Copy SourceFiles="@(Content)" DestinationFolder="$(ReleaseDir)ChestContents\Assets">
+            <Output TaskParameter="CopiedFiles" ItemName="CopiedAssetFiles" />
+        </Copy>
+        <Exec Command="powershell -Command &quot;Compress-Archive -Path '$(ReleaseDir)*' -DestinationPath '$(ReleaseZip)' -Force&quot;" />
     </Target>
     <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
         <PropertyGroup>
