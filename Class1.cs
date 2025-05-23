@@ -31,6 +31,10 @@ namespace ChestContents
         private readonly Harmony _harmonyInstance = new Harmony(PluginGuid);
         private CustomStatusEffect _chestIndexEffect;
         private int _lastChestCount = -1;
+        private int _lastInventoryHash = 0;
+        private float _lastCheckTime = 0f;
+        private const float InventoryCheckInterval = 0.5f; // seconds
+        public static int LastTotalChestCount = 0;
 
         public static IndicatedChestList IndicatedList => _indicatedList;
 
@@ -49,28 +53,77 @@ namespace ChestContents
             if (Player.m_localPlayer == null) return;
             if (_indicatedList == null) _indicatedList = new IndicatedChestList();
 
-            PopulateContainers();
-            ParseChests();
+            if (Time.time - _lastCheckTime > InventoryCheckInterval)
+            {
+                _lastCheckTime = Time.time;
+                int chestCount = GetNearbyChestCount();
+                int inventoryHash = GetNearbyInventoryHash();
+                int totalChestCount = GetAllChestCount();
+                LastTotalChestCount = totalChestCount;
+                if (chestCount != _lastChestCount || inventoryHash != _lastInventoryHash || totalChestCount != _lastChestCount)
+                {
+                    PopulateContainers();
+                    ParseChests();
+                    _lastChestCount = chestCount;
+                    _lastInventoryHash = inventoryHash;
+                }
+            }
             _indicatedList.RunEffects();
 
+            // Always ensure the status effect is present and updated
+            var seMan = Player.m_localPlayer.GetSEMan();
             var chestIndex = _chestIndexEffect.StatusEffect;
             int currentChestCount = ChestInfoDict.Count;
             if (chestIndex is SeChestIndex) chestIndex.m_tooltip = currentChestCount.ToString();
-
-            if (_lastChestCount != currentChestCount)
+            if (!seMan.GetStatusEffect(_chestIndexEffect.StatusEffect.NameHash()))
             {
-                var seMan = Player.m_localPlayer.GetSEMan();
-                if (seMan.GetStatusEffect(_chestIndexEffect.StatusEffect.NameHash()))
-                {
-                    seMan.RemoveStatusEffect(_chestIndexEffect.StatusEffect);
-                }
                 seMan.AddStatusEffect(_chestIndexEffect.StatusEffect, true);
-                _lastChestCount = currentChestCount;
             }
+        }
+
+        private int GetNearbyChestCount()
+        {
+            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
+            int count = 0;
+            for (var i = 0; i < colliderCount; i++)
+            {
+                var collider = Colliders[i];
+                if (collider.transform.parent == null) continue;
+                var container = collider.transform.gameObject.GetComponentInParent<Container>();
+                if (container && container.GetInventory() != null && CheckContainerAccess(container, Player.m_localPlayer))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private int GetNearbyInventoryHash()
+        {
+            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
+            int hash = 17;
+            for (var i = 0; i < colliderCount; i++)
+            {
+                var collider = Colliders[i];
+                if (collider.transform.parent == null) continue;
+                var container = collider.transform.gameObject.GetComponentInParent<Container>();
+                if (container && container.GetInventory() != null && CheckContainerAccess(container, Player.m_localPlayer))
+                {
+                    var inv = container.GetInventory();
+                    foreach (var item in inv.GetAllItemsInGridOrder())
+                    {
+                        hash = hash * 31 + (item.m_shared.m_name?.GetHashCode() ?? 0);
+                        hash = hash * 31 + item.m_stack;
+                    }
+                }
+            }
+            return hash;
         }
 
         private void PopulateContainers()
         {
+            // Only update Chests list if chest count changed
+            Chests.Clear();
             var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
             var containers = new List<Container>();
             for (var i = 0; i < colliderCount; i++)
@@ -156,6 +209,11 @@ namespace ChestContents
             effect.m_icon = AssetUtils.LoadSpriteFromFile("ChestContents/Assets/chest.png");
             _chestIndexEffect = new CustomStatusEffect(effect, false);
             ItemManager.Instance.AddStatusEffect(_chestIndexEffect);
+        }
+
+        private int GetAllChestCount()
+        {
+            return GameObject.FindObjectsOfType<Container>().Length;
         }
 
         // Shows a popup window on the left side of the screen with the item name and distance
@@ -245,7 +303,7 @@ namespace ChestContents
             // Estimate width: 10px per character, min 200, max 600
             float width = Mathf.Clamp(20 + maxLineLength * (fontSize * 0.6f), 200, 600);
             // Height: fontSize * lines + padding
-            float height = fontSize * metaLines + 32;
+            float height = fontSize * metaLines + 48; // Increased padding to prevent clipping
             var canvasGo = new GameObject("ChestContentsMetaPopup");
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -269,7 +327,7 @@ namespace ChestContents
             text.color = Color.white;
             text.alignment = TextAnchor.UpperLeft;
             var textRect = textGo.GetComponent<RectTransform>();
-            textRect.sizeDelta = new Vector2(width - 20, height - 16);
+            textRect.sizeDelta = new Vector2(width - 20, height - 8); // Slightly more height for text
             textRect.anchorMin = new Vector2(0, 1);
             textRect.anchorMax = new Vector2(0, 1);
             textRect.pivot = new Vector2(0, 1);
@@ -560,9 +618,13 @@ namespace ChestContents
     {
         public override string GetIconText()
         {
-            if (string.IsNullOrEmpty(m_tooltip)) return string.Empty;
-            if (!int.TryParse(m_tooltip, out var tt)) return string.Empty;
-            return tt == 1 ? $"{tt} chest" : $"{tt} chests";
+            int indexed = 0;
+            try
+            {
+                indexed = ChestContents.Main.ChestInfoDict.Count;
+            }
+            catch { }
+            return indexed == 1 ? $"{indexed} chest" : $"{indexed} chests";
         }
     }
 
@@ -612,7 +674,8 @@ namespace ChestContents
                 int chestCount = Main.ChestInfoDict.Count;
                 int itemTypes = Main.ItemNameIndex.Count;
                 int totalItems = Main.ItemNameIndex.Values.SelectMany(x => x).Sum(x => x.Stack);
-                string meta = $"Chests indexed: {chestCount}\nUnique item types: {itemTypes}\nTotal items: {totalItems}";
+                int allChests = Main.LastTotalChestCount;
+                string meta = $"Chests indexed: {chestCount}\nAll chests: {allChests}\nUnique item types: {itemTypes}\nTotal items: {totalItems}";
                 Main.ShowMetaPopup(meta);
                 return;
             }
