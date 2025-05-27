@@ -89,6 +89,7 @@ namespace ChestContents.Managers
                 "sc"
             ));
             CommandManager.Instance.AddConsoleCommand(new ConfigPanelCommand());
+            CommandManager.Instance.AddConsoleCommand(new ConfigPanelCommand("cc"));
 
             _chestScanner = new ChestScanner();
             _chestIndexer = new ChestIndexer();

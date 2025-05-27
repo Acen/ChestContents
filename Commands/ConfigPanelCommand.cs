@@ -5,7 +5,12 @@ namespace ChestContents.Commands
 {
     public class ConfigPanelCommand : ConsoleCommand
     {
-        public override string Name => "chestconfig";
+        private readonly string _name;
+        public ConfigPanelCommand(string name = "chestconfig")
+        {
+            _name = name;
+        }
+        public override string Name => _name;
         public override string Help => "Open the ChestContents config panel";
         public override bool IsNetwork => false;
 

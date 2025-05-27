@@ -89,9 +89,9 @@ namespace ChestContents.UI
             // Update preview marker position if enabled and player exists
             if (previewEnabled && Player.m_localPlayer != null && previewEffect != null)
             {
-                // Use a static height for the player's effect (e.g., 3f)
-                float playerEffectHeight = 3f;
-                Vector3 markerPos = Player.m_localPlayer.transform.position + new Vector3(0, playerEffectHeight, 0);
+                // Use a static height for the ActionableEffect (ring)
+                float ringEffectHeight = 1f;
+                Vector3 markerPos = Player.m_localPlayer.transform.position + new Vector3(0, ringEffectHeight, 0);
                 if (previewEffectOffset == null || (markerPos - previewEffectOffset.Value).sqrMagnitude > 0.01f)
                 {
                     previewEffect.ShowEffectForTarget(markerPos, Quaternion.identity, PlayerPreviewEffectId);
@@ -360,22 +360,6 @@ namespace ChestContents.UI
                 }
                 // Optionally: hide preview if disabled
             });
-
-            // Add explanatory text about the static effect location
-            var staticInfoObj = new GameObject("StaticEffectInfo");
-            staticInfoObj.transform.SetParent(bg.transform, false);
-            var staticInfo = staticInfoObj.AddComponent<Text>();
-            staticInfo.text = "Note: The preview effect location is static and will not follow your player.";
-            staticInfo.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            staticInfo.fontSize = 14;
-            staticInfo.color = new Color(1f, 1f, 1f, 0.7f);
-            staticInfo.alignment = TextAnchor.MiddleCenter;
-            var staticInfoRect = staticInfoObj.GetComponent<RectTransform>();
-            staticInfoRect.sizeDelta = new Vector2(270, 24);
-            staticInfoRect.anchorMin = new Vector2(0.5f, 0);
-            staticInfoRect.anchorMax = new Vector2(0.5f, 0);
-            staticInfoRect.pivot = new Vector2(0.5f, 0);
-            staticInfoRect.anchoredPosition = new Vector2(0, -20);
         }
 
         // Helper to add a label to a column
