@@ -14,7 +14,6 @@ using Jotunn.Managers;
 using Jotunn.Utils;
 using UnityEngine;
 using ChestContents.UI;
-// ReSharper disable Unity.PerformanceCriticalCodeInvocation
 
 namespace ChestContents.Managers
 {
