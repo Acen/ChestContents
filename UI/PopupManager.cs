@@ -73,8 +73,9 @@ namespace ChestContents.UI
             var lines = meta?.Split('\n') ?? new[] { "" };
             var maxLineLength = 0;
             foreach (var l in lines) maxLineLength = Mathf.Max(maxLineLength, l.Length);
-            var width = Mathf.Clamp(20 + maxLineLength * (fontSize * 0.6f), 200, 600);
-            float height = fontSize * metaLines + 48;
+            // Add extra width for config table
+            var width = Mathf.Clamp(20 + Mathf.Max(maxLineLength, 32) * (fontSize * 0.6f), 260, 600);
+            float height = fontSize * metaLines + 48 + fontSize * 4 + 16; // Add space for config table
             var canvasGo = new GameObject("ChestContentsMetaPopup");
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -98,12 +99,35 @@ namespace ChestContents.UI
             text.color = Color.white;
             text.alignment = TextAnchor.UpperLeft;
             var textRect = textGo.GetComponent<RectTransform>();
-            textRect.sizeDelta = new Vector2(width - 20, height - 8);
+            textRect.sizeDelta = new Vector2(width - 20, fontSize * metaLines + 8);
             textRect.anchorMin = new Vector2(0, 1);
             textRect.anchorMax = new Vector2(0, 1);
             textRect.pivot = new Vector2(0, 1);
             textRect.anchoredPosition = new Vector2(12, -8);
+
+            // Config table
+            var configGo = new GameObject("ConfigTable");
+            configGo.transform.SetParent(panelGo.transform, false);
+            var configText = configGo.AddComponent<Text>();
+            string configTable = "<b>Current Config</b>\n" +
+                $"Vertical Marker: <color=yellow>{(Managers.ChestContentsPlugin.EnableVerticalMarker?.Value == true ? "Enabled" : "Disabled")}</color>\n" +
+                $"Marker Height: <color=yellow>{Managers.ChestContentsPlugin.VerticalMarkerHeight?.Value:F1}</color>\n" +
+                $"Search Radius: <color=yellow>{Managers.ChestContentsPlugin.ChestSearchRadius?.Value}</color>";
+            configText.text = configTable;
+            configText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            configText.fontSize = fontSize - 2;
+            configText.color = Color.cyan;
+            configText.alignment = TextAnchor.UpperLeft;
+            configText.supportRichText = true;
+            var configRect = configGo.GetComponent<RectTransform>();
+            configRect.sizeDelta = new Vector2(width - 20, fontSize * 4 + 8);
+            configRect.anchorMin = new Vector2(0, 1);
+            configRect.anchorMax = new Vector2(0, 1);
+            configRect.pivot = new Vector2(0, 1);
+            configRect.anchoredPosition = new Vector2(12, -8 - (fontSize * metaLines + 12));
+
             Object.Destroy(canvasGo, 4f);
         }
     }
 }
+

@@ -14,6 +14,8 @@ namespace ChestContents.Managers
         private readonly ActionableEffect _effect;
         private readonly Dictionary<int, GameObject> _verticalIndicators = new Dictionary<int, GameObject>();
         private GameObject _activeConnectionVfx;
+        private readonly Func<bool> _getShowVertical;
+        private readonly Func<float> _getMarkerHeight;
 
         public IndicatedChestList()
         {
@@ -34,6 +36,15 @@ namespace ChestContents.Managers
             ChestList = chestList;
             _chestSet = new HashSet<int>(chestList.Select(c => c.InstanceID));
             _effect = new ActionableEffect("vfx_ExtensionConnection");
+        }
+
+        public IndicatedChestList(Func<bool> getShowVertical, Func<float> getMarkerHeight)
+        {
+            ChestList = new List<ChestInfo>();
+            _chestSet = new HashSet<int>();
+            _effect = new ActionableEffect("vfx_ExtensionConnection");
+            _getShowVertical = getShowVertical;
+            _getMarkerHeight = getMarkerHeight;
         }
 
         public List<ChestInfo> ChestList { get; }
@@ -69,6 +80,8 @@ namespace ChestContents.Managers
         {
             if (Game.IsPaused()) return;
             var time = (float)DateTime.Now.TimeOfDay.TotalSeconds;
+            bool showVertical = _getShowVertical();
+            float markerHeight = _getMarkerHeight();
             foreach (var chest in ChestList)
             {
                 var radius = 0.5f;
@@ -77,23 +90,31 @@ namespace ChestContents.Managers
                 var vfxPos = chest.Position + offset;
                 _effect.RunEffect(vfxPos, chest.Rotation, chest.InstanceID);
 
-                if (!_verticalIndicators.ContainsKey(chest.InstanceID) || _verticalIndicators[chest.InstanceID] == null)
+                if (showVertical)
                 {
-                    var indicator = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                    indicator.name = $"ChestVerticalIndicator_{chest.InstanceID}";
-                    Object.Destroy(indicator.GetComponent<Collider>());
-                    indicator.transform.localScale = new Vector3(0.15f, 3f, 0.15f);
-                    var shader = Shader.Find("Sprites/Default");
-                    var mat = new Material(shader);
-                    mat.color = new Color(1f, 0.5f, 0f, 0.5f);
-                    indicator.GetComponent<Renderer>().material = mat;
-                    _verticalIndicators[chest.InstanceID] = indicator;
+                    if (!_verticalIndicators.ContainsKey(chest.InstanceID) || _verticalIndicators[chest.InstanceID] == null)
+                    {
+                        var indicator = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                        indicator.name = $"ChestVerticalIndicator_{chest.InstanceID}";
+                        Object.Destroy(indicator.GetComponent<Collider>());
+                        indicator.transform.localScale = new Vector3(0.15f, markerHeight / 2f, 0.15f);
+                        var shader = Shader.Find("Sprites/Default");
+                        var mat = new Material(shader);
+                        mat.color = new Color(1f, 0.5f, 0f, 0.5f);
+                        indicator.GetComponent<Renderer>().material = mat;
+                        _verticalIndicators[chest.InstanceID] = indicator;
+                    }
+                    var ind = _verticalIndicators[chest.InstanceID];
+                    float yOffset = markerHeight;
+                    ind.transform.position = chest.Position + new Vector3(0, yOffset / 2f, 0);
+                    ind.transform.localScale = new Vector3(0.15f, yOffset / 2f, 0.15f);
+                    ind.transform.rotation = Quaternion.identity;
                 }
-
-                var ind = _verticalIndicators[chest.InstanceID];
-                ind.transform.position = chest.Position + new Vector3(0, 3f, 0);
-                ind.transform.rotation = Quaternion.identity;
-                ind.SetActive(true);
+                else if (_verticalIndicators.ContainsKey(chest.InstanceID) && _verticalIndicators[chest.InstanceID] != null)
+                {
+                    Object.Destroy(_verticalIndicators[chest.InstanceID]);
+                    _verticalIndicators[chest.InstanceID] = null;
+                }
             }
 
             var validIds = new HashSet<int>(ChestList.Select(c => c.InstanceID));

@@ -13,6 +13,8 @@
 - Displays the number of indexed chests as a status effect (see the first image above).
 - Provides a searchable meta pane to quickly find where items are stored (see the second image above).
 - Command-line interface for searching chests by item name.
+- **Meta data viewing:** Run the default `/searchchests` command with no arguments to view meta data about the mod's state. This does not reset the indexed chests or cached data.
+- **Configurable options:** Use the `/chestconfig` or `/cc` command to edit configuration options and preview the effect on yourself in real time.
 
 ## Commands
 
@@ -38,9 +40,35 @@ To find the chest containing the most mushrooms, type:
 
 This will indicate the chest with the highest quantity of mushrooms in your indexed chests, showing its location and the quantity found.
 
+#### Meta Data and State
+
+Run the default command with no arguments:
+
+```
+/searchchests
+```
+
+This will display meta data about the mod's current state, such as the number of indexed chests and items. It does not reset the mod's state or cached data.
+
+### Config Command
+
+Edit configuration and preview effects:
+
+```
+/chestconfig
+```
+
+or
+
+```
+/cc
+```
+
+This command allows you to edit some configuration options for the mod and preview the effect on yourself immediately.
+
 ## Best Practices
 
-- Use the search command with partial item names for broader results (e.g., `/chestsearch mush` will match "mushroom").
+- Use the search command with partial item names for broader results (e.g., `/searchchests mush` will match "mushroom").
 
 ## Installation
 
