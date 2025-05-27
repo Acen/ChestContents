@@ -12,10 +12,22 @@ namespace ChestContents.UI
         private Toggle verticalMarkerToggle;
         private InputField markerHeightInputField;
         private bool isOpen = false;
+        private GameObject previewPanel;
+        private Toggle previewToggle;
+        private bool previewEnabled = false;
+
+        // Use a unique ID for the player preview effect
+        private const int PlayerPreviewEffectId = -999;
+        private ChestContents.Effects.ActionableEffect previewEffect;
+        private Vector3? previewEffectOffset = null;
+
+        // Store reference to the player vertical indicator
+        private GameObject playerVerticalIndicator;
 
         private void Awake()
         {
             Debug.Log("ConfigPanelManager Awake called");
+            previewEffect = new ChestContents.Effects.ActionableEffect("vfx_ExtensionConnection");
             // Do not create the panel here!
         }
 
@@ -32,11 +44,88 @@ namespace ChestContents.UI
                 verticalMarkerToggle.isOn = ChestContentsPlugin.EnableVerticalMarker.Value;
             if (markerHeightInputField != null)
                 markerHeightInputField.text = ChestContentsPlugin.VerticalMarkerHeight.Value.ToString();
+            // Always show preview panel when config panel is shown
+            ShowPreviewPanel();
+        }
+
+        public void HidePanel()
+        {
+            if (panel != null)
+                panel.SetActive(false);
+            // Always hide preview panel when config panel is hidden
+            HidePreviewPanel();
+            // Remove the preview marker from the player when the panel is closed
+            previewEffect.ClearEffectForTarget(PlayerPreviewEffectId);
+            previewEffectOffset = null;
+            // Destroy the player vertical indicator if it exists
+            if (playerVerticalIndicator != null)
+            {
+                Object.Destroy(playerVerticalIndicator);
+                playerVerticalIndicator = null;
+            }
+        }
+
+        public void ShowPreviewPanel()
+        {
+            if (previewPanel == null)
+            {
+                CreatePreviewPanel();
+            }
+            previewPanel.SetActive(true);
+            // Sync toggle with state
+            if (previewToggle != null)
+                previewToggle.isOn = previewEnabled;
+        }
+
+        public void HidePreviewPanel()
+        {
+            if (previewPanel != null)
+            {
+                previewPanel.SetActive(false);
+            }
         }
 
         private void Update()
         {
-            // No hotkey logic here anymore
+            // Update preview marker position if enabled and player exists
+            if (previewEnabled && Player.m_localPlayer != null && previewEffect != null)
+            {
+                // Use a static height for the player's effect (e.g., 3f)
+                float playerEffectHeight = 3f;
+                Vector3 markerPos = Player.m_localPlayer.transform.position + new Vector3(0, playerEffectHeight, 0);
+                if (previewEffectOffset == null || (markerPos - previewEffectOffset.Value).sqrMagnitude > 0.01f)
+                {
+                    previewEffect.ShowEffectForTarget(markerPos, Quaternion.identity, PlayerPreviewEffectId);
+                    previewEffectOffset = markerPos;
+                }
+                // Create or update the vertical indicator above the player
+                if (ChestContentsPlugin.EnableVerticalMarker.Value)
+                {
+                    if (playerVerticalIndicator == null)
+                    {
+                        playerVerticalIndicator = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                        playerVerticalIndicator.name = "PlayerVerticalIndicator";
+                        Object.Destroy(playerVerticalIndicator.GetComponent<Collider>());
+                        var shader = Shader.Find("Sprites/Default");
+                        var mat = new Material(shader);
+                        mat.color = new Color(1f, 0.5f, 0f, 0.5f);
+                        playerVerticalIndicator.GetComponent<Renderer>().material = mat;
+                    }
+                    float yOffset = ChestContentsPlugin.VerticalMarkerHeight.Value;
+                    playerVerticalIndicator.transform.position = Player.m_localPlayer.transform.position + new Vector3(0, yOffset / 2f, 0);
+                    playerVerticalIndicator.transform.localScale = new Vector3(0.15f, yOffset / 2f, 0.15f);
+                    playerVerticalIndicator.transform.rotation = Quaternion.identity;
+                    playerVerticalIndicator.SetActive(true);
+                }
+                else if (playerVerticalIndicator != null)
+                {
+                    playerVerticalIndicator.SetActive(false);
+                }
+            }
+            else if (playerVerticalIndicator != null)
+            {
+                playerVerticalIndicator.SetActive(false);
+            }
         }
 
         // @used by ChestContentsPlugin to toggle the panel
@@ -44,15 +133,13 @@ namespace ChestContents.UI
         {
             isOpen = !isOpen;
             Debug.Log($"Config panel set active: {isOpen}");
-            panel.SetActive(isOpen);
             if (isOpen)
             {
-                // Sync UI with config values
-                radiusInputField.text = ChestContentsPlugin.ChestSearchRadius.Value.ToString();
-                if (verticalMarkerToggle != null)
-                    verticalMarkerToggle.isOn = ChestContentsPlugin.EnableVerticalMarker.Value;
-                if (markerHeightInputField != null)
-                    markerHeightInputField.text = ChestContentsPlugin.VerticalMarkerHeight.Value.ToString();
+                ShowPanel();
+            }
+            else
+            {
+                HidePanel();
             }
         }
 
@@ -147,6 +234,27 @@ namespace ChestContents.UI
             AddVerticalMarkerToggleToColumn(rightCol.transform);
             AddMarkerHeightInputToColumn(rightCol.transform);
 
+            // Wire up config changes to plugin settings
+            radiusInputField.onEndEdit.AddListener(val =>
+            {
+                if (int.TryParse(val, out int result))
+                {
+                    ChestContentsPlugin.ChestSearchRadius.Value = result;
+                    if (previewEnabled) ApplyLivePreview();
+                }
+                else
+                {
+                    radiusInputField.text = ChestContentsPlugin.ChestSearchRadius.Value.ToString();
+                }
+            });
+            verticalMarkerToggle.onValueChanged.AddListener(val => {
+                ChestContentsPlugin.EnableVerticalMarker.Value = val;
+            });
+            markerHeightInputField.onEndEdit.AddListener(val => {
+                if (float.TryParse(val, out float result))
+                    ChestContentsPlugin.VerticalMarkerHeight.Value = result;
+            });
+
             // Add a flexible space to push the close button to the bottom
             var spacer = new GameObject("FlexibleSpacer");
             spacer.transform.SetParent(bg.transform, false);
@@ -157,7 +265,7 @@ namespace ChestContents.UI
             var subtextObj = new GameObject("Subtext");
             subtextObj.transform.SetParent(bg.transform, false);
             var subtext = subtextObj.AddComponent<Text>();
-            subtext.text = "Tip: Open your inventory/crafting window to change these options. (This panel allows using the mouse)";
+            subtext.text = "Tip: Open your inventory/crafting window to change these options. (This will allow using the mouse)";
             subtext.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             subtext.fontSize = 14;
             subtext.color = new Color(1f, 1f, 1f, 0.7f);
@@ -181,55 +289,94 @@ namespace ChestContents.UI
             closeRect.sizeDelta = new Vector2(400, 40);
 
             CreateCloseButton(closeContainer.transform);
+        }
 
-            // Removed border creation for a cleaner look
-            // float borderThickness = 4f;
-            // float panelWidth = 400f;
-            // float panelHeight = 200f;
-            // // Top border
-            // var borderTop = new GameObject("BorderTop");
-            // borderTop.transform.SetParent(bg.transform, false);
-            // var borderTopImg = borderTop.AddComponent<Image>();
-            // borderTopImg.color = Color.white;
-            // var borderTopRect = borderTop.GetComponent<RectTransform>();
-            // borderTopRect.anchorMin = new Vector2(0, 1);
-            // borderTopRect.anchorMax = new Vector2(1, 1);
-            // borderTopRect.pivot = new Vector2(0.5f, 1);
-            // borderTopRect.sizeDelta = new Vector2(0, borderThickness);
-            // borderTopRect.anchoredPosition = new Vector2(0, borderThickness / 2);
-            // // Bottom border
-            // var borderBottom = new GameObject("BorderBottom");
-            // borderBottom.transform.SetParent(bg.transform, false);
-            // var borderBottomImg = borderBottom.AddComponent<Image>();
-            // borderBottomImg.color = Color.white;
-            // var borderBottomRect = borderBottom.GetComponent<RectTransform>();
-            // borderBottomRect.anchorMin = new Vector2(0, 0);
-            // borderBottomRect.anchorMax = new Vector2(1, 0);
-            // borderBottomRect.pivot = new Vector2(0.5f, 0);
-            // borderBottomRect.sizeDelta = new Vector2(0, borderThickness);
-            // borderBottomRect.anchoredPosition = new Vector2(0, -borderThickness / 2);
-            // // Left border
-            // var borderLeft = new GameObject("BorderLeft");
-            // borderLeft.transform.SetParent(bg.transform, false);
-            // var borderLeftImg = borderLeft.AddComponent<Image>();
-            // borderLeftImg.color = Color.white;
-            // var borderLeftRect = borderLeft.GetComponent<RectTransform>();
-            // borderLeftRect.anchorMin = new Vector2(0, 0);
-            // borderLeftRect.anchorMax = new Vector2(0, 1);
-            // borderLeftRect.pivot = new Vector2(0, 0.5f);
-            // borderLeftRect.sizeDelta = new Vector2(borderThickness, 0);
-            // borderLeftRect.anchoredPosition = new Vector2(-borderThickness / 2, 0);
-            // // Right border
-            // var borderRight = new GameObject("BorderRight");
-            // borderRight.transform.SetParent(bg.transform, false);
-            // var borderRightImg = borderRight.AddComponent<Image>();
-            // borderRightImg.color = Color.white;
-            // var borderRightRect = borderRight.GetComponent<RectTransform>();
-            // borderRightRect.anchorMin = new Vector2(1, 0);
-            // borderRightRect.anchorMax = new Vector2(1, 1);
-            // borderRightRect.pivot = new Vector2(1, 0.5f);
-            // borderRightRect.sizeDelta = new Vector2(borderThickness, 0);
-            // borderRightRect.anchoredPosition = new Vector2(borderThickness / 2, 0);
+        private void CreatePreviewPanel()
+        {
+            previewPanel = new GameObject("ChestContentsPreviewPanel");
+            var canvas = previewPanel.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = 1001; // Above config panel
+            previewPanel.AddComponent<CanvasScaler>();
+            previewPanel.AddComponent<GraphicRaycaster>();
+
+            var bg = new GameObject("BG");
+            bg.transform.SetParent(previewPanel.transform, false);
+            var img = bg.AddComponent<Image>();
+            img.color = new Color(0, 0, 0, 0.85f);
+            var rect = bg.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(300, 100);
+            // Place below the config panel
+            rect.anchoredPosition = new Vector2(0, -220); // Y offset below config panel
+
+            var vLayout = bg.AddComponent<VerticalLayoutGroup>();
+            vLayout.childAlignment = TextAnchor.UpperCenter;
+            vLayout.spacing = 10;
+            vLayout.padding = new RectOffset(15, 15, 15, 15);
+            vLayout.childForceExpandWidth = true;
+            vLayout.childForceExpandHeight = false;
+
+            var labelObj = new GameObject("Label");
+            labelObj.transform.SetParent(bg.transform, false);
+            var label = labelObj.AddComponent<Text>();
+            label.text = "Preview Config Options";
+            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.fontSize = 18;
+            label.color = Color.white;
+            label.alignment = TextAnchor.MiddleCenter;
+            var labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.sizeDelta = new Vector2(220, 24);
+
+            var toggleObj = new GameObject("PreviewToggle");
+            toggleObj.transform.SetParent(bg.transform, false);
+            previewToggle = toggleObj.AddComponent<Toggle>();
+            var toggleRect = toggleObj.GetComponent<RectTransform>();
+            toggleRect.sizeDelta = new Vector2(32, 32);
+            var toggleBgObj = new GameObject("Background");
+            toggleBgObj.transform.SetParent(toggleObj.transform, false);
+            var toggleBgImg = toggleBgObj.AddComponent<Image>();
+            toggleBgImg.color = Color.gray;
+            var toggleBgRect = toggleBgObj.GetComponent<RectTransform>();
+            toggleBgRect.sizeDelta = new Vector2(20, 20);
+            var checkmarkObj = new GameObject("Checkmark");
+            checkmarkObj.transform.SetParent(toggleBgObj.transform, false);
+            var checkmarkImg = checkmarkObj.AddComponent<Image>();
+            checkmarkImg.color = Color.green;
+            var checkmarkRect = checkmarkObj.GetComponent<RectTransform>();
+            checkmarkRect.sizeDelta = new Vector2(16, 16);
+            checkmarkRect.anchorMin = new Vector2(0.5f, 0.5f);
+            checkmarkRect.anchorMax = new Vector2(0.5f, 0.5f);
+            checkmarkRect.pivot = new Vector2(0.5f, 0.5f);
+            checkmarkRect.anchoredPosition = Vector2.zero;
+            previewToggle.targetGraphic = toggleBgImg;
+            previewToggle.graphic = checkmarkImg;
+            previewToggle.isOn = previewEnabled;
+            previewToggle.onValueChanged.AddListener(val =>
+            {
+                previewEnabled = val;
+                if (previewEnabled)
+                {
+                    ApplyLivePreview();
+                }
+                // Optionally: hide preview if disabled
+            });
+
+            // Add explanatory text about the static effect location
+            var staticInfoObj = new GameObject("StaticEffectInfo");
+            staticInfoObj.transform.SetParent(bg.transform, false);
+            var staticInfo = staticInfoObj.AddComponent<Text>();
+            staticInfo.text = "Note: The preview effect location is static and will not follow your player.";
+            staticInfo.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            staticInfo.fontSize = 14;
+            staticInfo.color = new Color(1f, 1f, 1f, 0.7f);
+            staticInfo.alignment = TextAnchor.MiddleCenter;
+            var staticInfoRect = staticInfoObj.GetComponent<RectTransform>();
+            staticInfoRect.sizeDelta = new Vector2(270, 24);
+            staticInfoRect.anchorMin = new Vector2(0.5f, 0);
+            staticInfoRect.anchorMax = new Vector2(0.5f, 0);
+            staticInfoRect.pivot = new Vector2(0.5f, 0);
+            staticInfoRect.anchoredPosition = new Vector2(0, -20);
         }
 
         // Helper to add a label to a column
@@ -303,6 +450,7 @@ namespace ChestContents.UI
                 if (int.TryParse(val, out int result))
                 {
                     ChestContentsPlugin.ChestSearchRadius.Value = result;
+                    if (previewEnabled) ApplyLivePreview();
                 }
                 else
                 {
@@ -444,12 +592,52 @@ namespace ChestContents.UI
                     closeTextRect.sizeDelta = new Vector2(120, 36);
                     closeTextRect.anchoredPosition = Vector2.zero;
                 }
-                closeBtn.onClick.AddListener(() => panel.SetActive(false));
+                closeBtn.onClick.AddListener(() => HidePanel());
             }
             catch (System.Exception ex)
             {
                 Debug.LogError($"Exception in CreateCloseButton: {ex}");
             }
+        }
+
+        private void ApplyLivePreview()
+        {
+            // Remove any existing marker effect from player
+            previewEffect.ClearEffectForTarget(PlayerPreviewEffectId);
+            previewEffectOffset = null;
+            // Destroy the player vertical indicator if it exists
+            if (playerVerticalIndicator != null)
+            {
+                Object.Destroy(playerVerticalIndicator);
+                playerVerticalIndicator = null;
+            }
+            if (!previewEnabled) return;
+            // Only show marker if local player exists
+            if (Player.m_localPlayer != null)
+            {
+                float markerHeight = ChestContentsPlugin.VerticalMarkerHeight.Value;
+                // The vertical indicator should be centered on the player, and the ring effect should be at the top of the vertical indicator
+                Vector3 playerPos = Player.m_localPlayer.transform.position;
+                if (ChestContentsPlugin.EnableVerticalMarker.Value)
+                {
+                    playerVerticalIndicator = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                    playerVerticalIndicator.name = "PlayerVerticalIndicator";
+                    Object.Destroy(playerVerticalIndicator.GetComponent<Collider>());
+                    var shader = Shader.Find("Sprites/Default");
+                    var mat = new Material(shader);
+                    mat.color = new Color(1f, 0.5f, 0f, 0.5f);
+                    playerVerticalIndicator.GetComponent<Renderer>().material = mat;
+                    playerVerticalIndicator.transform.position = playerPos + new Vector3(0, markerHeight / 2f, 0);
+                    playerVerticalIndicator.transform.localScale = new Vector3(0.15f, markerHeight / 2f, 0.15f);
+                    playerVerticalIndicator.transform.rotation = Quaternion.identity;
+                    playerVerticalIndicator.SetActive(true);
+                }
+                // 2. Place the ring effect at the top of the vertical indicator
+                Vector3 ringPos = playerPos + new Vector3(0, markerHeight, 0);
+                previewEffect.ShowEffectForTarget(ringPos, Quaternion.identity, PlayerPreviewEffectId);
+                previewEffectOffset = ringPos;
+            }
+            Debug.Log($"[ChestContents] Live preview applied: Radius={ChestContentsPlugin.ChestSearchRadius.Value}, VerticalMarker={ChestContentsPlugin.EnableVerticalMarker.Value}, MarkerHeight={ChestContentsPlugin.VerticalMarkerHeight.Value}");
         }
     }
 }

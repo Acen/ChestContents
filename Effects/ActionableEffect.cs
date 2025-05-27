@@ -5,7 +5,15 @@ using UnityEngine;
 
 namespace ChestContents.Effects
 {
-    public class ActionableEffect
+    public interface IEffectRunner
+    {
+        void RunEffect(Vector3 position, Quaternion rotation, int chestInstanceID);
+        void ShowEffectForTarget(Vector3 position, Quaternion rotation, int uniqueId);
+        void ClearEffectForTarget(int uniqueId);
+        void PurgeInvalid(HashSet<int> validInstanceIds);
+    }
+
+    public class ActionableEffect : IEffectRunner
     {
         private const int EffectsPerChest = 12;
 
@@ -79,6 +87,23 @@ namespace ChestContents.Effects
             _activeEffectInstances[chestInstanceID] = newInstances;
         }
 
+        // Allow showing/clearing effect for any target by unique ID
+        public void ShowEffectForTarget(Vector3 position, Quaternion rotation, int uniqueId)
+        {
+            RunEffect(position, rotation, uniqueId);
+        }
+
+        public void ClearEffectForTarget(int uniqueId)
+        {
+            if (_activeEffectInstances.TryGetValue(uniqueId, out var effectInstances))
+            {
+                foreach (var inst in effectInstances)
+                    if (inst.Obj != null)
+                        Object.Destroy(inst.Obj);
+                _activeEffectInstances.Remove(uniqueId);
+            }
+        }
+
         public void PurgeInvalid(HashSet<int> validInstanceIds)
         {
             var toRemove = _activeEffectInstances.Keys.Where(id => !validInstanceIds.Contains(id)).ToList();
@@ -98,3 +123,4 @@ namespace ChestContents.Effects
         }
     }
 }
+

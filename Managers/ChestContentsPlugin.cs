@@ -13,6 +13,7 @@ using Jotunn.Entities;
 using Jotunn.Managers;
 using Jotunn.Utils;
 using UnityEngine;
+using ChestContents.UI;
 // ReSharper disable Unity.PerformanceCriticalCodeInvocation
 
 namespace ChestContents.Managers
@@ -49,9 +50,12 @@ namespace ChestContents.Managers
         public static BepInEx.Configuration.ConfigEntry<bool> EnableVerticalMarker;
         public static BepInEx.Configuration.ConfigEntry<float> VerticalMarkerHeight;
 
-        public static ChestContents.UI.ConfigPanelManager ConfigPanelManagerInstance;
+        public static ConfigPanelManager ConfigPanelManagerInstance;
 
-        private bool configPanelInitialized = false;
+        private bool _configPanelInitialized;
+
+        private IChestScanner _chestScanner;
+        private IChestIndexer _chestIndexer;
 
         private void Awake()
         {
@@ -64,31 +68,58 @@ namespace ChestContents.Managers
 
             _harmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
             AddStatusEffect();
-            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand());
-            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand("cs"));
-            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand("sc"));
+            // Register commands with dependency injection
+            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand(
+                () => IndicatedList,
+                () => ChestInfoDict,
+                () => ItemNameIndex,
+                () => LastTotalChestCount
+            ));
+            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand(
+                () => IndicatedList,
+                () => ChestInfoDict,
+                () => ItemNameIndex,
+                () => LastTotalChestCount,
+                "cs"
+            ));
+            CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand(
+                () => IndicatedList,
+                () => ChestInfoDict,
+                () => ItemNameIndex,
+                () => LastTotalChestCount,
+                "sc"
+            ));
             CommandManager.Instance.AddConsoleCommand(new ConfigPanelCommand());
+
+            _chestScanner = new ChestScanner();
+            _chestIndexer = new ChestIndexer();
         }
 
         private void Update()
         {
-            if (!configPanelInitialized && Player.m_localPlayer != null)
+            if (!_configPanelInitialized && Player.m_localPlayer != null)
             {
                 var configPanelManagerObj = new GameObject("ConfigPanelManager");
                 ConfigPanelManagerInstance = configPanelManagerObj.AddComponent<ChestContents.UI.ConfigPanelManager>();
                 DontDestroyOnLoad(configPanelManagerObj);
-                configPanelInitialized = true;
+                _configPanelInitialized = true;
             }
 
             if (Player.m_localPlayer == null) return;
-            if (IndicatedList == null) IndicatedList = new IndicatedChestList();
+            if (IndicatedList == null)
+            {
+                IndicatedList = new IndicatedChestList(
+                    () => EnableVerticalMarker != null && EnableVerticalMarker.Value,
+                    () => VerticalMarkerHeight != null ? VerticalMarkerHeight.Value : 3f
+                );
+            }
 
             if (Time.time - _lastCheckTime > InventoryCheckInterval)
             {
                 _lastCheckTime = Time.time;
-                var chestCount = GetNearbyChestCount();
-                var inventoryHash = GetNearbyInventoryHash();
-                var totalChestCount = GetAllChestCount();
+                var chestCount = _chestScanner.GetNearbyChestCount(Player.m_localPlayer.transform.position, 30f, Colliders, Player.m_localPlayer);
+                var inventoryHash = _chestScanner.GetNearbyInventoryHash(Player.m_localPlayer.transform.position, 30f, Colliders, Player.m_localPlayer);
+                var totalChestCount = _chestScanner.GetAllChestCount();
                 LastTotalChestCount = totalChestCount;
                 if (chestCount != _lastChestCount || inventoryHash != _lastInventoryHash ||
                     totalChestCount != _lastChestCount)
@@ -111,106 +142,28 @@ namespace ChestContents.Managers
                 seMan.AddStatusEffect(_chestIndexEffect.StatusEffect, true);
         }
 
-        private int GetNearbyChestCount()
-        {
-            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
-            var count = 0;
-            for (var i = 0; i < colliderCount; i++)
-            {
-                var collider = Colliders[i];
-                if (collider.transform.parent == null) continue;
-                var container = collider.transform.gameObject.GetComponentInParent<Container>();
-                if (container && container.GetInventory() != null &&
-                    CheckContainerAccess(container, Player.m_localPlayer)) count++;
-            }
-
-            return count;
-        }
-
-        private int GetNearbyInventoryHash()
-        {
-            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
-            var hash = 17;
-            for (var i = 0; i < colliderCount; i++)
-            {
-                var collider = Colliders[i];
-                if (collider.transform.parent == null) continue;
-                var container = collider.transform.gameObject.GetComponentInParent<Container>();
-                if (container && container.GetInventory() != null &&
-                    CheckContainerAccess(container, Player.m_localPlayer))
-                {
-                    var inv = container.GetInventory();
-                    foreach (var item in inv.GetAllItemsInGridOrder())
-                    {
-                        hash = hash * 31 + (item.m_shared.m_name?.GetHashCode() ?? 0);
-                        hash = hash * 31 + item.m_stack;
-                    }
-                }
-            }
-
-            return hash;
-        }
-
         private void PopulateContainers()
         {
             Chests.Clear();
-            var colliderCount = Physics.OverlapSphereNonAlloc(Player.m_localPlayer.transform.position, 30f, Colliders);
-            var containers = new List<Container>();
-            for (var i = 0; i < colliderCount; i++)
-            {
-                var collider = Colliders[i];
-                if (collider.transform.parent == null) continue;
-                var container = collider.transform.gameObject.GetComponentInParent<Container>();
-                if (container) containers.Add(container);
-            }
-
+            var containers = _chestScanner.ScanNearbyChests(Player.m_localPlayer.transform.position, 30f, Colliders, Player.m_localPlayer);
             foreach (var container in containers)
             {
                 if (container == null || container.GetInventory() == null) continue;
                 var instanceID = container.GetInstanceID();
                 if (Chests.Find(x => x.GetInstanceID() == instanceID) == null)
-                    if (CheckContainerAccess(container, Player.m_localPlayer))
-                        Chests.Add(container);
+                    Chests.Add(container);
             }
         }
 
         private void ParseChests()
         {
             Chests.RemoveAll(chest => chest == null || chest.transform == null || chest.GetInventory() == null);
-            var validInstanceIds = new HashSet<int>(Chests.Select(c => c.GetInstanceID()));
-            var toRemove = ChestInfoDict.Keys.Where(id => !validInstanceIds.Contains(id)).ToList();
-            foreach (var id in toRemove) ChestInfoDict.Remove(id);
-            IndicatedList?.PurgeInvalid(validInstanceIds);
-            ItemNameIndex.Clear();
-            foreach (var chest in Chests.Where(chest =>
-                         chest != null && chest.transform != null && chest.GetInventory() != null))
-            {
-                var ci = new ChestInfo(chest);
-                if (!ChestInfoDict.ContainsKey(ci.InstanceID))
-                    ChestInfoDict.Add(ci.InstanceID, ci);
-                else if (ChestInfoDict[ci.InstanceID].LastUpdated < DateTime.Now.Subtract(TimeSpan.FromSeconds(5)))
-                    ChestInfoDict[ci.InstanceID] = ci;
-                foreach (var item in ci.Contents)
-                {
-                    var itemName = item.m_shared.m_name.ToLowerInvariant();
-                    if (!ItemNameIndex.TryGetValue(itemName, out var list))
-                    {
-                        list = new List<ItemLocationInfo>();
-                        ItemNameIndex[itemName] = list;
-                    }
-
-                    list.Add(new ItemLocationInfo
-                    {
-                        ItemName = item.m_shared.m_name,
-                        Stack = item.m_stack,
-                        ChestId = ci.InstanceID,
-                        Position = ci.Position
-                    });
-                }
-            }
+            var chestsList = Chests.ToList();
+            _chestIndexer.IndexChests(chestsList, ChestInfoDict, ItemNameIndex);
+            IndicatedList?.PurgeInvalid(new HashSet<int>(chestsList.Select(c => c.GetInstanceID())));
         }
 
-        private static bool CheckContainerAccess(Container container, Player player)
+        public static bool CheckContainerAccess(Container container, Player player)
         {
             return ContainerPatch.RunCheckAccess(container, player.GetPlayerID());
         }
@@ -225,10 +178,130 @@ namespace ChestContents.Managers
             _chestIndexEffect = new CustomStatusEffect(effect, false);
             ItemManager.Instance.AddStatusEffect(_chestIndexEffect);
         }
+    }
 
-        private int GetAllChestCount()
+    public interface IChestScanner
+    {
+        List<Container> ScanNearbyChests(Vector3 position, float radius, Collider[] colliders, Player player);
+        int GetNearbyChestCount(Vector3 position, float radius, Collider[] colliders, Player player);
+        int GetNearbyInventoryHash(Vector3 position, float radius, Collider[] colliders, Player player);
+        int GetAllChestCount();
+    }
+
+    public class ChestScanner : IChestScanner
+    {
+        public List<Container> ScanNearbyChests(Vector3 position, float radius, Collider[] colliders, Player player)
         {
-            return FindObjectsOfType<Container>().Length;
+            var containers = new List<Container>();
+            var colliderCount = Physics.OverlapSphereNonAlloc(position, radius, colliders);
+            for (var i = 0; i < colliderCount; i++)
+            {
+                var collider = colliders[i];
+                if (collider.transform.parent == null) continue;
+                var container = collider.transform.gameObject.GetComponentInParent<Container>();
+                if (container && container.GetInventory() != null &&
+                    ChestContentsPlugin.CheckContainerAccess(container, player))
+                {
+                    containers.Add(container);
+                }
+            }
+            return containers;
+        }
+
+        public int GetNearbyChestCount(Vector3 position, float radius, Collider[] colliders, Player player)
+        {
+            var colliderCount = Physics.OverlapSphereNonAlloc(position, radius, colliders);
+            var count = 0;
+            for (var i = 0; i < colliderCount; i++)
+            {
+                var collider = colliders[i];
+                if (collider.transform.parent == null) continue;
+                var container = colliders[i].transform.gameObject.GetComponentInParent<Container>();
+                if (container && container.GetInventory() != null &&
+                    ChestContentsPlugin.CheckContainerAccess(container, player)) count++;
+            }
+            return count;
+        }
+
+        public int GetNearbyInventoryHash(Vector3 position, float radius, Collider[] colliders, Player player)
+        {
+            var colliderCount = Physics.OverlapSphereNonAlloc(position, radius, colliders);
+            var hash = 17;
+            for (var i = 0; i < colliderCount; i++)
+            {
+                var collider = colliders[i];
+                if (collider.transform.parent == null) continue;
+                var container = collider.transform.gameObject.GetComponentInParent<Container>();
+                if (container && container.GetInventory() != null &&
+                    ChestContentsPlugin.CheckContainerAccess(container, player))
+                {
+                    var inv = container.GetInventory();
+                    var items = inv.GetAllItemsInGridOrder();
+                    foreach (var item in items)
+                    {
+                        hash = hash * 31 + (item.m_shared.m_name?.GetHashCode() ?? 0);
+                        hash = hash * 31 + item.m_stack;
+                    }
+                }
+            }
+            return hash;
+        }
+
+        public int GetAllChestCount()
+        {
+            return UnityEngine.Object.FindObjectsOfType<Container>().Length;
+        }
+    }
+
+    public interface IChestIndexer
+    {
+        void IndexChests(IEnumerable<Container> chests, Dictionary<int, ChestInfo> chestInfoDict, Dictionary<string, List<ItemLocationInfo>> itemNameIndex);
+    }
+
+    public class ChestIndexer : IChestIndexer
+    {
+        public void IndexChests(IEnumerable<Container> chests, Dictionary<int, ChestInfo> chestInfoDict, Dictionary<string, List<ItemLocationInfo>> itemNameIndex)
+        {
+            var validInstanceIds = new HashSet<int>(chests.Select(c => c.GetInstanceID()));
+            var toRemove = chestInfoDict.Keys.Where(id => !validInstanceIds.Contains(id)).ToList();
+            foreach (var id in toRemove) chestInfoDict.Remove(id);
+            itemNameIndex.Clear();
+            foreach (var chest in chests.Where(chest => chest != null && chest.transform != null && chest.GetInventory() != null))
+            {
+                int currentRevision = (int)Traverse.Create(chest).Field("m_lastRevision").GetValue<uint>();
+                int instanceId = chest.GetInstanceID();
+                bool needsUpdate = false;
+                if (!chestInfoDict.ContainsKey(instanceId))
+                {
+                    needsUpdate = true;
+                }
+                else if (chestInfoDict[instanceId].LastRevision != currentRevision)
+                {
+                    needsUpdate = true;
+                }
+                if (needsUpdate)
+                {
+                    var ci = new ChestInfo(chest);
+                    chestInfoDict[ci.InstanceID] = ci;
+                }
+                var ciRef = chestInfoDict[instanceId];
+                foreach (var item in ciRef.Contents)
+                {
+                    var itemName = item.m_shared.m_name.ToLowerInvariant();
+                    if (!itemNameIndex.TryGetValue(itemName, out var list))
+                    {
+                        list = new List<ItemLocationInfo>();
+                        itemNameIndex[itemName] = list;
+                    }
+                    list.Add(new ItemLocationInfo
+                    {
+                        ItemName = item.m_shared.m_name,
+                        Stack = item.m_stack,
+                        ChestId = ciRef.InstanceID,
+                        Position = ciRef.Position
+                    });
+                }
+            }
         }
     }
 }

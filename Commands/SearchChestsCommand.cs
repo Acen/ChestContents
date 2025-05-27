@@ -13,10 +13,23 @@ namespace ChestContents.Commands
     public class SearchChestsCommand : ConsoleCommand
     {
         private readonly string _name;
+        private readonly Func<IndicatedChestList> _getIndicatedList;
+        private readonly Func<Dictionary<int, ChestInfo>> _getChestInfoDict;
+        private readonly Func<Dictionary<string, List<ItemLocationInfo>>> _getItemNameIndex;
+        private readonly Func<int> _getLastTotalChestCount;
 
-        public SearchChestsCommand(string name = "searchchests")
+        public SearchChestsCommand(
+            Func<IndicatedChestList> getIndicatedList,
+            Func<Dictionary<int, ChestInfo>> getChestInfoDict,
+            Func<Dictionary<string, List<ItemLocationInfo>>> getItemNameIndex,
+            Func<int> getLastTotalChestCount,
+            string name = "searchchests")
         {
             _name = name;
+            _getIndicatedList = getIndicatedList;
+            _getChestInfoDict = getChestInfoDict;
+            _getItemNameIndex = getItemNameIndex;
+            _getLastTotalChestCount = getLastTotalChestCount;
         }
 
         public override string Help => "Search Chests for an item";
@@ -25,24 +38,18 @@ namespace ChestContents.Commands
 
         public override void Run(string[] args)
         {
-            if (args.Length == 1 && args[0].ToLowerInvariant() == "config")
-            {
-                if (ChestContentsPlugin.ConfigPanelManagerInstance == null)
-                {
-                    ChestContentsPlugin.Logger.LogWarning("Config panel is not available yet. Try again in a few seconds after entering the world.");
-                    return;
-                }
-                ChestContentsPlugin.ConfigPanelManagerInstance.ShowPanel();
-                return;
-            }
+            var indicatedList = _getIndicatedList();
+            var chestInfoDict = _getChestInfoDict();
+            var itemNameIndex = _getItemNameIndex();
+            var lastTotalChestCount = _getLastTotalChestCount();
 
             if (args.Length == 0)
             {
-                ChestContentsPlugin.IndicatedList?.Clear();
-                var chestCount = ChestContentsPlugin.ChestInfoDict.Count;
-                var itemTypes = ChestContentsPlugin.ItemNameIndex.Count;
-                var totalItems = ChestContentsPlugin.ItemNameIndex.Values.SelectMany(x => x).Sum(x => x.Stack);
-                var allChests = ChestContentsPlugin.LastTotalChestCount;
+                indicatedList?.Clear();
+                var chestCount = chestInfoDict.Count;
+                var itemTypes = itemNameIndex.Count;
+                var totalItems = itemNameIndex.Values.SelectMany(x => x).Sum(x => x.Stack);
+                var allChests = lastTotalChestCount;
                 var meta =
                     $"Chests indexed: {chestCount}\nAll chests: {allChests}\nUnique item types: {itemTypes}\nTotal items: {totalItems}";
                 PopupManager.ShowMetaPopup(meta);
@@ -51,7 +58,7 @@ namespace ChestContents.Commands
 
             var partialItemName = args[0].ToLowerInvariant();
             var foundItems = new List<ItemLocationInfo>();
-            foreach (var kvp in ChestContentsPlugin.ItemNameIndex)
+            foreach (var kvp in itemNameIndex)
                 if (kvp.Key.Contains(partialItemName))
                     foundItems.AddRange(kvp.Value);
 
@@ -65,9 +72,9 @@ namespace ChestContents.Commands
             ChestContentsPlugin.Logger.LogInfo(
                 $"Found '{topEntry.ItemName}' x{topEntry.Stack} in chest {topEntry.ChestId} at {topEntry.Position}");
             var displayName = topEntry.ItemName;
-            ChestInfo chestInfo;
-            if (ChestContentsPlugin.ChestInfoDict.TryGetValue(topEntry.ChestId, out chestInfo) &&
-                chestInfo.Contents != null)
+            ChestInfo chestInfo = null;
+            chestInfoDict.TryGetValue(topEntry.ChestId, out chestInfo);
+            if (chestInfo != null && chestInfo.Contents != null)
             {
                 var item = chestInfo.Contents.FirstOrDefault(i => i.m_shared.m_name == topEntry.ItemName);
                 if (item != null && !string.IsNullOrEmpty(item.m_shared.m_name))
@@ -83,20 +90,19 @@ namespace ChestContents.Commands
             }
 
             PopupManager.ShowSearchResultsPopup(displayName, topEntry.Position, topEntry.Stack);
-            if (ChestContentsPlugin.IndicatedList != null)
+            if (indicatedList != null)
             {
-                ChestContentsPlugin.IndicatedList.Clear();
-                if (chestInfo.Position != Vector3.zero)
-                    ChestContentsPlugin.IndicatedList.Add(chestInfo);
+                indicatedList.Clear();
+                if (chestInfo != null && chestInfo.Position != Vector3.zero)
+                    indicatedList.Add(chestInfo);
                 else
-                    ChestContentsPlugin.IndicatedList.Add(new ChestInfo
-                    {
-                        Position = topEntry.Position,
-                        InstanceID = topEntry.ChestId,
-                        Rotation = Quaternion.identity,
-                        Contents = new List<ItemDrop.ItemData>(),
-                        LastUpdated = DateTime.Now
-                    });
+                    indicatedList.Add(new ChestInfo(
+                        topEntry.Position,
+                        topEntry.ChestId,
+                        Quaternion.identity,
+                        new List<ItemDrop.ItemData>(),
+                        DateTime.Now,
+                        0));
             }
         }
     }
