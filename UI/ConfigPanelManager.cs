@@ -28,7 +28,6 @@ namespace ChestContents.UI
         {
             Debug.Log("ConfigPanelManager Awake called");
             previewEffect = new ChestContents.Effects.ActionableEffect("vfx_ExtensionConnection");
-            // Do not create the panel here!
         }
 
         public void ShowPanel()
