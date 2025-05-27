@@ -1,6 +1,6 @@
 {
   "name": "ChestContents",
-  "version_number": "1.0.0",
+  "version_number": "1.1.0",
   "author": "sticky",
   "description": "A Valheim plugin to index and search chest contents, showing the chest with the most of a searched item.",
   "dependencies": [

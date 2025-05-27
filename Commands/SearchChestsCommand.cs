@@ -25,6 +25,17 @@ namespace ChestContents.Commands
 
         public override void Run(string[] args)
         {
+            if (args.Length == 1 && args[0].ToLowerInvariant() == "config")
+            {
+                if (ChestContentsPlugin.ConfigPanelManagerInstance == null)
+                {
+                    ChestContentsPlugin.Logger.LogWarning("Config panel is not available yet. Try again in a few seconds after entering the world.");
+                    return;
+                }
+                ChestContentsPlugin.ConfigPanelManagerInstance.ShowPanel();
+                return;
+            }
+
             if (args.Length == 0)
             {
                 ChestContentsPlugin.IndicatedList?.Clear();

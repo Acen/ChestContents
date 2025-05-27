@@ -13,6 +13,7 @@ using Jotunn.Entities;
 using Jotunn.Managers;
 using Jotunn.Utils;
 using UnityEngine;
+// ReSharper disable Unity.PerformanceCriticalCodeInvocation
 
 namespace ChestContents.Managers
 {
@@ -21,7 +22,7 @@ namespace ChestContents.Managers
     {
         private const string PluginGuid = "sticky.chestcontents";
         private const string PluginName = "ChestContents";
-        private const string PluginVersion = "1.0.0";
+        private const string PluginVersion = "1.1.0";
         private const float InventoryCheckInterval = 0.5f; // seconds
         public new static ManualLogSource Logger = BepInEx.Logging.Logger.CreateLogSource(PluginName);
 
@@ -41,17 +42,40 @@ namespace ChestContents.Managers
 
         public static IndicatedChestList IndicatedList { get; private set; }
 
+        // Config entries
+        public static BepInEx.Configuration.ConfigEntry<bool> EnableChestHighlighting;
+        public static BepInEx.Configuration.ConfigEntry<int> ChestSearchRadius;
+        public static BepInEx.Configuration.ConfigEntry<string> HighlightColor;
+
+        public static ChestContents.UI.ConfigPanelManager ConfigPanelManagerInstance;
+
+        private bool configPanelInitialized = false;
+
         private void Awake()
         {
+            // Config setup
+            EnableChestHighlighting = Config.Bind("General", "EnableChestHighlighting", true, "Enable or disable chest highlighting.");
+            ChestSearchRadius = Config.Bind("General", "ChestSearchRadius", 30, "Radius (in meters) to search for chests.");
+            HighlightColor = Config.Bind("General", "HighlightColor", "yellow", "Color to use for highlighting chests.");
+
             _harmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
             AddStatusEffect();
             CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand());
             CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand("cs"));
             CommandManager.Instance.AddConsoleCommand(new SearchChestsCommand("sc"));
+            CommandManager.Instance.AddConsoleCommand(new ConfigPanelCommand());
         }
 
         private void Update()
         {
+            if (!configPanelInitialized && Player.m_localPlayer != null)
+            {
+                var configPanelManagerObj = new GameObject("ConfigPanelManager");
+                ConfigPanelManagerInstance = configPanelManagerObj.AddComponent<ChestContents.UI.ConfigPanelManager>();
+                DontDestroyOnLoad(configPanelManagerObj);
+                configPanelInitialized = true;
+            }
+
             if (Player.m_localPlayer == null) return;
             if (IndicatedList == null) IndicatedList = new IndicatedChestList();
 
