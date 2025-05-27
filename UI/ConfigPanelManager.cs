@@ -8,8 +8,9 @@ namespace ChestContents.UI
     public class ConfigPanelManager : MonoBehaviour
     {
         private GameObject panel;
-        private Toggle highlightToggle;
         private InputField radiusInputField;
+        private Toggle verticalMarkerToggle;
+        private InputField markerHeightInputField;
         private bool isOpen = false;
 
         private void Awake()
@@ -26,8 +27,11 @@ namespace ChestContents.UI
             }
             panel.SetActive(true);
             // Sync UI with config values
-            highlightToggle.isOn = ChestContentsPlugin.EnableChestHighlighting.Value;
             radiusInputField.text = ChestContentsPlugin.ChestSearchRadius.Value.ToString();
+            if (verticalMarkerToggle != null)
+                verticalMarkerToggle.isOn = ChestContentsPlugin.EnableVerticalMarker.Value;
+            if (markerHeightInputField != null)
+                markerHeightInputField.text = ChestContentsPlugin.VerticalMarkerHeight.Value.ToString();
         }
 
         private void Update()
@@ -44,8 +48,11 @@ namespace ChestContents.UI
             if (isOpen)
             {
                 // Sync UI with config values
-                highlightToggle.isOn = ChestContentsPlugin.EnableChestHighlighting.Value;
                 radiusInputField.text = ChestContentsPlugin.ChestSearchRadius.Value.ToString();
+                if (verticalMarkerToggle != null)
+                    verticalMarkerToggle.isOn = ChestContentsPlugin.EnableVerticalMarker.Value;
+                if (markerHeightInputField != null)
+                    markerHeightInputField.text = ChestContentsPlugin.VerticalMarkerHeight.Value.ToString();
             }
         }
 
@@ -134,15 +141,33 @@ namespace ChestContents.UI
 
             // Add labels to left, controls to right
             AddLabelToColumn(leftCol.transform, "Chest Search Radius (m):");
-            AddLabelToColumn(leftCol.transform, "Enable Chest Highlighting");
+            AddLabelToColumn(leftCol.transform, "Enable Vertical Marker");
+            AddLabelToColumn(leftCol.transform, "Vertical Marker Height:");
             AddInputToColumn(rightCol.transform);
-            AddToggleToColumn(rightCol.transform);
+            AddVerticalMarkerToggleToColumn(rightCol.transform);
+            AddMarkerHeightInputToColumn(rightCol.transform);
 
             // Add a flexible space to push the close button to the bottom
             var spacer = new GameObject("FlexibleSpacer");
             spacer.transform.SetParent(bg.transform, false);
             var layoutElem = spacer.AddComponent<LayoutElement>();
             layoutElem.flexibleHeight = 1;
+
+            // Add subtext below the main content
+            var subtextObj = new GameObject("Subtext");
+            subtextObj.transform.SetParent(bg.transform, false);
+            var subtext = subtextObj.AddComponent<Text>();
+            subtext.text = "Tip: Open your inventory/crafting window to change these options. (This panel allows using the mouse)";
+            subtext.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            subtext.fontSize = 14;
+            subtext.color = new Color(1f, 1f, 1f, 0.7f);
+            subtext.alignment = TextAnchor.MiddleCenter;
+            var subtextRect = subtextObj.GetComponent<RectTransform>();
+            subtextRect.sizeDelta = new Vector2(370, 24);
+            subtextRect.anchorMin = new Vector2(0.5f, 0);
+            subtextRect.anchorMax = new Vector2(0.5f, 0);
+            subtextRect.pivot = new Vector2(0.5f, 0);
+            subtextRect.anchoredPosition = new Vector2(0, 10);
 
             // Add a container for the close button below, centered
             var closeContainer = new GameObject("CloseContainer");
@@ -286,48 +311,102 @@ namespace ChestContents.UI
             });
         }
 
-        // Helper to add the toggle to the right column
-        private void AddToggleToColumn(Transform parent)
+        // Add a new helper for the vertical marker toggle
+        private void AddVerticalMarkerToggleToColumn(Transform parent)
         {
-            var toggleObj = new GameObject("HighlightToggle");
+            var toggleObj = new GameObject("VerticalMarkerToggle");
             toggleObj.transform.SetParent(parent, false);
-            highlightToggle = toggleObj.AddComponent<Toggle>();
+            verticalMarkerToggle = toggleObj.AddComponent<Toggle>();
             var toggleRect = toggleObj.GetComponent<RectTransform>();
-            toggleRect.sizeDelta = new Vector2(32, 32); // Larger checkbox
-            toggleRect.anchorMin = new Vector2(0.5f, 0.5f);
-            toggleRect.anchorMax = new Vector2(0.5f, 0.5f);
-            toggleRect.pivot = new Vector2(0.5f, 0.5f);
-            toggleRect.anchoredPosition = Vector2.zero;
+            toggleRect.sizeDelta = new Vector2(32, 32);
             var layoutElem = toggleObj.AddComponent<LayoutElement>();
             layoutElem.minHeight = 32;
             layoutElem.minWidth = 32;
             layoutElem.preferredHeight = 32;
             layoutElem.preferredWidth = 32;
-            // Center align in parent
             var toggleBgObj = new GameObject("Background");
             toggleBgObj.transform.SetParent(toggleObj.transform, false);
             var toggleBgImg = toggleBgObj.AddComponent<Image>();
             toggleBgImg.color = Color.gray;
             var toggleBgRect = toggleBgObj.GetComponent<RectTransform>();
-            toggleBgRect.sizeDelta = new Vector2(32, 32); // Larger background
-            toggleBgRect.anchorMin = new Vector2(0.5f, 0.5f);
-            toggleBgRect.anchorMax = new Vector2(0.5f, 0.5f);
-            toggleBgRect.pivot = new Vector2(0.5f, 0.5f);
-            toggleBgRect.anchoredPosition = Vector2.zero;
+            toggleBgRect.sizeDelta = new Vector2(20, 20); // Make the background smaller
             var checkmarkObj = new GameObject("Checkmark");
             checkmarkObj.transform.SetParent(toggleBgObj.transform, false);
             var checkmarkImg = checkmarkObj.AddComponent<Image>();
             checkmarkImg.color = Color.green;
             var checkmarkRect = checkmarkObj.GetComponent<RectTransform>();
-            checkmarkRect.sizeDelta = new Vector2(28, 28); // Larger checkmark
+            checkmarkRect.sizeDelta = new Vector2(16, 16); // Make the checkmark smaller
             checkmarkRect.anchorMin = new Vector2(0.5f, 0.5f);
             checkmarkRect.anchorMax = new Vector2(0.5f, 0.5f);
             checkmarkRect.pivot = new Vector2(0.5f, 0.5f);
             checkmarkRect.anchoredPosition = Vector2.zero;
-            highlightToggle.targetGraphic = toggleBgImg;
-            highlightToggle.graphic = checkmarkImg;
-            highlightToggle.isOn = ChestContentsPlugin.EnableChestHighlighting?.Value ?? true;
-            highlightToggle.onValueChanged.AddListener(val => ChestContentsPlugin.EnableChestHighlighting.Value = val);
+            verticalMarkerToggle.targetGraphic = toggleBgImg;
+            verticalMarkerToggle.graphic = checkmarkImg;
+            verticalMarkerToggle.isOn = ChestContentsPlugin.EnableVerticalMarker.Value;
+            verticalMarkerToggle.onValueChanged.AddListener(val =>
+            {
+                ChestContentsPlugin.EnableVerticalMarker.Value = val;
+            });
+        }
+
+        // Add a new helper for the marker height input
+        private void AddMarkerHeightInputToColumn(Transform parent)
+        {
+            var inputObj = new GameObject("MarkerHeightInputField");
+            inputObj.transform.SetParent(parent, false);
+            var inputBg = inputObj.AddComponent<Image>();
+            inputBg.color = Color.white;
+            markerHeightInputField = inputObj.AddComponent<InputField>();
+            markerHeightInputField.targetGraphic = inputBg;
+            var inputRect = inputObj.GetComponent<RectTransform>();
+            inputRect.sizeDelta = new Vector2(0, 32);
+            var layoutElem = inputObj.AddComponent<LayoutElement>();
+            layoutElem.minWidth = 100;
+            layoutElem.flexibleWidth = 1;
+            // Text
+            var textObj = new GameObject("Text");
+            textObj.transform.SetParent(inputObj.transform, false);
+            var text = textObj.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            text.fontSize = 18;
+            text.color = Color.black;
+            text.alignment = TextAnchor.MiddleLeft;
+            var textRect = textObj.GetComponent<RectTransform>();
+            textRect.SetAsLastSibling();
+            textRect.anchorMin = new Vector2(0, 0);
+            textRect.anchorMax = new Vector2(1, 1);
+            textRect.offsetMin = new Vector2(4, 0);
+            textRect.offsetMax = new Vector2(-4, 0);
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            // Placeholder
+            var placeholderObj = new GameObject("Placeholder");
+            placeholderObj.transform.SetParent(inputObj.transform, false);
+            var placeholder = placeholderObj.AddComponent<Text>();
+            placeholder.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            placeholder.fontSize = 18;
+            placeholder.color = new Color(0.5f, 0.5f, 0.5f, 0.75f);
+            placeholder.text = "Height (m)";
+            placeholder.alignment = TextAnchor.MiddleLeft;
+            var placeholderRect = placeholderObj.GetComponent<RectTransform>();
+            placeholderRect.SetAsLastSibling();
+            placeholderRect.anchorMin = new Vector2(0, 0);
+            placeholderRect.anchorMax = new Vector2(1, 1);
+            placeholderRect.offsetMin = new Vector2(4, 0);
+            placeholderRect.offsetMax = new Vector2(-4, 0);
+            placeholderRect.pivot = new Vector2(0.5f, 0.5f);
+            markerHeightInputField.textComponent = text;
+            markerHeightInputField.placeholder = placeholder;
+            markerHeightInputField.onEndEdit.AddListener(val =>
+            {
+                if (float.TryParse(val, out float result))
+                {
+                    ChestContentsPlugin.VerticalMarkerHeight.Value = result;
+                }
+                else
+                {
+                    markerHeightInputField.text = ChestContentsPlugin.VerticalMarkerHeight.Value.ToString();
+                }
+            });
         }
 
         private void CreateCloseButton(Transform parent)
