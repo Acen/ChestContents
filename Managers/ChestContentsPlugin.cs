@@ -43,9 +43,7 @@ namespace ChestContents.Managers
         public static IndicatedChestList IndicatedList { get; private set; }
 
         // Config entries
-        public static BepInEx.Configuration.ConfigEntry<bool> EnableChestHighlighting;
         public static BepInEx.Configuration.ConfigEntry<int> ChestSearchRadius;
-        public static BepInEx.Configuration.ConfigEntry<string> HighlightColor;
         public static BepInEx.Configuration.ConfigEntry<bool> EnableVerticalMarker;
         public static BepInEx.Configuration.ConfigEntry<float> VerticalMarkerHeight;
 
@@ -59,9 +57,7 @@ namespace ChestContents.Managers
         private void Awake()
         {
             // Config setup
-            EnableChestHighlighting = Config.Bind("General", "EnableChestHighlighting", true, "Enable or disable chest highlighting.");
             ChestSearchRadius = Config.Bind("General", "ChestSearchRadius", 30, "Radius (in meters) to search for chests.");
-            HighlightColor = Config.Bind("General", "HighlightColor", "yellow", "Color to use for highlighting chests.");
             EnableVerticalMarker = Config.Bind("General", "EnableVerticalMarker", true, "Enable or disable the vertical marker.");
             VerticalMarkerHeight = Config.Bind("General", "VerticalMarkerHeight", 8f, "Height of the vertical marker.");
 
